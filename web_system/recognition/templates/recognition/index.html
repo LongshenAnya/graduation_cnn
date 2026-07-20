@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>宠物图像识别系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <style>
+        /* 上传区域 */
+        .upload-area {
+            width: 100%;
+            height: 300px;
+            border: 2px dashed #dee2e6;
+            border-radius: 0.375rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: border-color 0.15s ease-in-out, background-color 0.15s ease-in-out;
+            position: relative;
+            background-color: #f8f9fa;
+        }
+        .upload-area:hover,
+        .upload-area.dragover {
+            border-color: #007bff;
+            background-color: #e3f2fd;
+        }
+        .upload-area.uploaded {
+            border-color: #28a745;
+            background-color: #d4edda;
+        }
+        .upload-text {
+            font-size: 1.2rem;
+            color: #6c757d;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .upload-icon {
+            font-size: 3rem;
+            color: #6c757d;
+            margin-bottom: 10px;
+        }
+
+        /* 预览容器 */
+        .preview-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: none; /* JS控制显示为flex */
+            justify-content: center; /* 水平居中图片 */
+            align-items: center;     /* 垂直居中图片 */
+        }
+        .preview-image {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 0.375rem;
+        }
+        .reupload-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .reupload-btn:hover {
+            background: rgba(255, 255, 255, 1);
+        }
+
+        /* 加载动画 */
+        .loading-container {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+        }
+        .spinner-border-custom {
+            width: 3rem;
+            height: 3rem;
+            margin-bottom: 10px;
+        }
+        .loading-text {
+            font-size: 1.1rem;
+            color: #007bff;
+        }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .upload-area { height: 250px; }
+            .upload-text { font-size: 1rem; }
+            .upload-icon { font-size: 2.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="{% url 'home' %}">宠物识别系统</a>
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text me-3">欢迎，{{ user.username }}</span>
+                <a class="nav-link" href="{% url 'charts' %}">图表</a>
+                <a class="nav-link" href="{% url 'profile' %}">个人中心</a>
+                <a class="nav-link" href="{% url 'logout' %}">登出</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h4 class="text-center">宠物图像识别</h4>
+                        <!-- 模式切换标签页 -->
+                        <ul class="nav nav-tabs justify-content-center mt-3" id="modeTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="catdog-tab" data-bs-toggle="tab" data-bs-target="#catdog-mode" type="button" role="tab" aria-controls="catdog-mode" aria-selected="true">猫狗识别</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="breeds-tab" data-bs-toggle="tab" data-bs-target="#breeds-mode" type="button" role="tab" aria-controls="breeds-mode" aria-selected="false">狗品种识别</button>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="card-body">
+                        <!-- 标签页内容 -->
+                        <div class="tab-content" id="modeTabsContent">
+                            <!-- 猫狗识别模式 -->
+                            <div class="tab-pane fade show active" id="catdog-mode" role="tabpanel" aria-labelledby="catdog-tab">
+                                <div class="alert alert-info">
+                                    <strong>猫狗识别模式：</strong>上传图片，系统将识别是猫还是狗。
+                                </div>
+                            </div>
+                            <!-- 狗品种识别模式 -->
+                            <div class="tab-pane fade" id="breeds-mode" role="tabpanel" aria-labelledby="breeds-tab">
+                                <div class="alert alert-info">
+                                    <strong>狗品种识别模式：</strong>上传狗图片，系统将识别具体的狗品种（76种）。
+                                </div>
+                            </div>
+                        </div>
+
+                        {% if messages %}
+                            {% for message in messages %}
+                                <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+                            {% endfor %}
+                        {% endif %}
+                        
+                        <form id="uploadForm" enctype="multipart/form-data">
+                            {% csrf_token %}
+                            <!-- 任务类型 -->
+                            <input type="hidden" id="taskInput" name="task" value="catdog">
+                            <!-- 隐藏实际文件输入 -->
+                            <input type="file" id="imageInput" name="image" accept="image/*" style="display: none;" required>
+                            
+                            <!-- 上传区域 -->
+                            <div class="mb-3">
+                                <div class="upload-area" id="uploadArea">
+                                    <div class="upload-content" id="uploadContent">
+                                        <div class="upload-icon">📷</div>
+                                        <div class="upload-text">拖拽图片至此 或 点击上传</div>
+                                    </div>
+                                    <div class="preview-container" id="previewContainer">
+                                        <img id="previewImage" class="preview-image" alt="图片预览">
+                                        <button type="button" class="reupload-btn" id="reuploadBtn" title="重新上传">❌</button>
+                                    </div>
+                                    <div class="loading-container" id="loadingContainer">
+                                        <div class="spinner-border text-primary spinner-border-custom" role="status">
+                                            <span class="visually-hidden">加载中...</span>
+                                        </div>
+                                        <div class="loading-text">正在识别中，请稍候...</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">选择模型</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="model" id="resnet" value="resnet" checked>
+                                    <label class="form-check-label" for="resnet">ResNet</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="model" id="vgg" value="vgg">
+                                    <label class="form-check-label" for="vgg">VGG</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="model" id="mobilenet" value="mobilenet">
+                                    <label class="form-check-label" for="mobilenet">MobileNet</label>
+                                </div>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary w-100" id="predictBtn">开始识别</button>
+                        </form>
+                        <!-- 结果渲染区域 -->
+                        <div id="resultArea"></div>
+                        
+                        {% if prediction %}
+                        <!-- 服务器端渲染的备份结果 -->
+                        <hr>
+                        <div class="text-center">
+                            <h5>识别结果</h5>
+                            <img src="{{ prediction.image.url }}" alt="上传图片" class="img-thumbnail mb-3" style="max-width: 300px;">
+                            <div class="alert alert-success">
+                                <strong>识别结果：</strong>{{ prediction.display_prediction }}<br>
+                                <strong>置信度：</strong>{{ confidence_percent|floatformat:2 }}%<br>
+                                <strong>推理耗时：</strong>{{ inference_time_ms|floatformat:2 }} ms
+                            </div>
+                            {% if prediction.task == 'catdog' %}
+                            <div class="mt-3">
+                                <button class="btn btn-outline-success me-2" onclick="submitFeedback('cat', {{ prediction.id }})">这是猫</button>
+                                <button class="btn btn-outline-warning" onclick="submitFeedback('dog', {{ prediction.id }})">这是狗</button>
+                            </div>
+                            {% else %}
+                            <div class="mt-3">
+                                <label class="form-label">选择正确的品种：</label>
+                                <select class="form-select" id="breedSelect" onchange="submitBreedFeedback({{ prediction.id }})">
+                                    <option value="">请选择品种...</option>
+                                    <!-- 品种选项将通过JS动态添加 -->
+                                </select>
+                            </div>
+                            {% endif %}
+                            <div id="feedbackMessage" class="mt-3" style="display: none;">
+                                <div class="alert alert-info">感谢反馈！</div>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 脚本区 -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{% static 'js/main.js' %}"></script>
+    <script src="{% static 'js/api.js' %}"></script>
+    <script>
+        /* === DOM 引用 === */
+        const imageInput = document.getElementById('imageInput');
+        const uploadArea = document.getElementById('uploadArea');
+        const uploadContent = document.getElementById('uploadContent');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewImage = document.getElementById('previewImage');
+        const reuploadBtn = document.getElementById('reuploadBtn');
+        const loadingContainer = document.getElementById('loadingContainer');
+        const predictBtn = document.getElementById('predictBtn');
+        const uploadForm = document.getElementById('uploadForm');
+        const taskInput = document.getElementById('taskInput');
+
+        /* --- 模式切换 --- */
+        document.getElementById('catdog-tab').addEventListener('click', () => {
+            taskInput.value = 'catdog';
+            hideResult(); // 切换模式时隐藏结果
+        });
+        document.getElementById('breeds-tab').addEventListener('click', () => {
+            taskInput.value = 'breeds';
+            hideResult(); // 切换模式时隐藏结果
+        });
+
+        function hideResult() {
+            document.getElementById('resultArea').innerHTML = '';
+        }
+
+        /* --- 拖拽行为 --- */
+        function preventDefaults(e){ e.preventDefault(); e.stopPropagation(); }
+        ['dragenter','dragover','dragleave','drop'].forEach(evt=>{
+            uploadArea.addEventListener(evt, preventDefaults, false);
+        });
+        ['dragenter','dragover'].forEach(evt=>{
+            uploadArea.addEventListener(evt, ()=>uploadArea.classList.add('dragover'), false);
+        });
+        ['dragleave','drop'].forEach(evt=>{
+            uploadArea.addEventListener(evt, ()=>uploadArea.classList.remove('dragover'), false);
+        });
+        uploadArea.addEventListener('drop', e=>{
+            const files=e.dataTransfer.files;
+            if(files.length>0) handleFileSelect(files[0]);
+        }, false);
+        uploadArea.addEventListener('click', ()=>{ if(!loadingContainer.style.display || loadingContainer.style.display==='none') imageInput.click(); });
+        imageInput.addEventListener('change', e=>{ if(e.target.files.length>0) handleFileSelect(e.target.files[0]); });
+
+        function handleFileSelect(file){
+            if(!file.type.startsWith('image/')){ showAlert('请选择图片文件！','warning'); return; }
+            const reader=new FileReader();
+            reader.onload=e=>{
+                previewImage.src=e.target.result;
+                showPreview();
+            };
+            reader.readAsDataURL(file);
+        }
+        function showPreview(){
+            uploadContent.style.display='none';
+            previewContainer.style.display='flex';
+            loadingContainer.style.display='none';
+            uploadArea.classList.add('uploaded');
+        }
+        function hidePreview(){
+            uploadContent.style.display='flex';
+            previewContainer.style.display='none';
+            loadingContainer.style.display='none';
+            uploadArea.classList.remove('uploaded');
+            imageInput.value='';
+        }
+        reuploadBtn.addEventListener('click', e=>{ e.stopPropagation(); hidePreview(); });
+
+        /* --- 表单提交与 API 调用 --- */
+        uploadForm.addEventListener('submit', e=>{
+            e.preventDefault();
+            if(!imageInput.files[0]){ showAlert('请先选择图片！','warning'); return; }
+            showLoading();
+            const formData=new FormData();
+            formData.append('image', imageInput.files[0]);
+            formData.append('model_name', document.querySelector('input[name="model"]:checked').value);
+            formData.append('task', document.getElementById('taskInput').value);
+            fetch('/api/predict/', {
+                method:'POST',
+                headers:{ 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
+                body: formData
+            })
+            .then(r=>r.json())
+            .then(data=>{
+                hideLoading();
+                if(data.success){ renderResult(data); }
+                else{ showAlert(data.error||'识别失败','danger'); }
+            })
+            .catch(err=>{
+                hideLoading();
+                showAlert('网络错误，请稍后重试','danger');
+                console.error('预测接口错误',err);
+            });
+        });
+
+        function showLoading(){
+            uploadContent.style.display='none';
+            previewContainer.style.display='none';
+            loadingContainer.style.display='flex';
+            predictBtn.disabled=true;
+            predictBtn.textContent='识别中...';
+        }
+        function hideLoading(){
+            loadingContainer.style.display='none';
+            if(previewImage.src) showPreview();
+            else uploadContent.style.display='flex';
+            predictBtn.disabled=false;
+            predictBtn.textContent='开始识别';
+        }
+
+        /* --- 结果与提示 --- */
+        function renderResult(data) {
+        const resultArea = document.getElementById('resultArea');
+        
+        // 创建图片URL用于显示
+        const imageUrl = URL.createObjectURL(imageInput.files[0]);
+        
+        // 获取当前任务类型
+        const currentTask = document.getElementById('taskInput').value;
+        
+        // 根据任务类型生成反馈UI
+        let feedbackUI = '';
+        if (currentTask === 'catdog') {
+            feedbackUI = `
+                <div class="mt-3">
+                    <button class="btn btn-outline-success me-2" onclick="submitFeedback('cat', ${data.prediction_id})">这是猫</button>
+                    <button class="btn btn-outline-warning" onclick="submitFeedback('dog', ${data.prediction_id})">这是狗</button>
+                </div>
+            `;
+        } else if (currentTask === 'breeds') {
+            // 生成品种下拉菜单
+            feedbackUI = `
+                <div class="mt-3">
+                    <label class="form-label">选择正确的品种：</label>
+                    <select class="form-select" id="breedSelect" onchange="submitBreedFeedback(${data.prediction_id})">
+                        <option value="">请选择品种...</option>
+                        <!-- 品种选项将通过JS动态添加 -->
+                    </select>
+                </div>
+            `;
+        }
+        
+        resultArea.innerHTML = `
+            <hr>
+            <div class="text-center">
+                <h5>识别结果</h5>
+                <img src="${imageUrl}" alt="上传图片" class="img-thumbnail mb-3" style="max-width: 300px;">
+                <div class="alert alert-success">
+                    <strong>识别结果：</strong>${data.display_result}<br>
+                    <strong>置信度：</strong>${(data.confidence * 100).toFixed(2)}%<br>
+                    <strong>推理耗时：</strong>${(data.time * 1000).toFixed(2)} ms
+                </div>
+                ${feedbackUI}
+                <div id="feedbackMessage" class="mt-3" style="display: none;">
+                    <div class="alert alert-info">感谢反馈！</div>
+                </div>
+            </div>
+        `;
+        
+        // 如果是品种模式，加载品种选项
+        if (currentTask === 'breeds') {
+            loadBreedOptions();
+        }
+    }
+        
+        function showAlert(msg,type){
+            const div=document.createElement('div');
+            div.className=`alert alert-${type} alert-dismissible fade show`;
+            div.innerHTML=`${msg}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+            document.querySelector('.container').insertBefore(div,document.querySelector('.container').firstChild);
+            setTimeout(()=>div.remove(),5000);
+        }
+
+        /* 提交反馈 */
+        function submitFeedback(correction, predictionId) {
+    if (!predictionId) {
+        showAlert('无法提交反馈：没有识别记录', 'warning');
+        return;
+    }
+    
+    // 获取按钮容器
+    const buttonContainer = event.target.closest('.mt-3');
+    
+    fetch('/api/feedback/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify({
+            prediction_id: predictionId,
+            correction: correction
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // 清空按钮容器
+            buttonContainer.innerHTML = '';
+            
+            // 创建反馈结果文字
+            const feedbackDiv = document.createElement('div');
+            feedbackDiv.className = 'alert alert-success mb-0';
+            
+            // 根据纠正结果显示文字
+            const correctionText = correction === 'cat' ? '猫' : '狗';
+            feedbackDiv.innerHTML = `<strong>已反馈：这是 ${correctionText}</strong>`;
+            
+            buttonContainer.appendChild(feedbackDiv);
+            
+        } else {
+            showAlert('反馈提交失败：' + (data.error || '未知错误'), 'danger');
+        }
+    })
+    .catch(err => {
+        console.error('反馈提交失败', err);
+        showAlert('反馈提交失败，请稍后重试', 'danger');
+    });
+}
+
+        /* 提交品种反馈 */
+        function submitBreedFeedback(predictionId) {
+            const breedSelect = document.getElementById('breedSelect');
+            const selectedBreed = breedSelect.value;
+            
+            if (!selectedBreed) {
+                showAlert('请选择正确的品种', 'warning');
+                return;
+            }
+            
+            if (!predictionId) {
+                showAlert('无法提交反馈：没有识别记录', 'warning');
+                return;
+            }
+            
+            // 获取按钮容器
+            const buttonContainer = event.target.closest('.mt-3');
+            
+            fetch('/api/feedback/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify({
+                    prediction_id: predictionId,
+                    correction: selectedBreed
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // 清空按钮容器
+                    buttonContainer.innerHTML = '';
+                    
+                    // 创建反馈结果文字
+                    const feedbackDiv = document.createElement('div');
+                    feedbackDiv.className = 'alert alert-success mb-0';
+                    
+                    // 获取选中品种的显示名称
+                    const selectedOption = breedSelect.options[breedSelect.selectedIndex];
+                    const displayName = selectedOption.text;
+                    feedbackDiv.innerHTML = `<strong>已反馈：这是 ${displayName}</strong>`;
+                    
+                    buttonContainer.appendChild(feedbackDiv);
+                    
+                } else {
+                    showAlert('反馈提交失败：' + (data.error || '未知错误'), 'danger');
+                }
+            })
+            .catch(err => {
+                console.error('反馈提交失败', err);
+                showAlert('反馈提交失败，请稍后重试', 'danger');
+            });
+        }
+
+        /* 加载品种选项 */
+        function loadBreedOptions() {
+            fetch('/static/data/dog_breeds.json')
+                .then(response => response.json())
+                .then(data => {
+                    const breedSelect = document.getElementById('breedSelect');
+                    // 清空现有选项（保留默认选项）
+                    breedSelect.innerHTML = '<option value="">请选择品种...</option>';
+                    
+                    // 添加品种选项
+                    data.breeds.forEach(breed => {
+                        const option = document.createElement('option');
+                        option.value = breed.en;
+                        option.textContent = `${breed.cn} (${breed.en})`;
+                        breedSelect.appendChild(option);
+                    });
+                })
+                .catch(err => {
+                    console.error('加载品种数据失败', err);
+                    showAlert('加载品种数据失败，请刷新页面重试', 'danger');
+                });
+        }
+
+        /* 页面加载初始化 */
+        document.addEventListener('DOMContentLoaded', function() {
+            // 如果有服务器端渲染的品种反馈，需要加载品种选项
+            const breedSelect = document.getElementById('breedSelect');
+            if (breedSelect) {
+                loadBreedOptions();
+            }
+        });
+    </script>
+</body>
+</html>
