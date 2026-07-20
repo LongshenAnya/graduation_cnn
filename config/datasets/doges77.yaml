@@ -1,0 +1,9 @@
+name: "doges77"
+num_classes: 77
+image_size: [224, 224]
+raw_data_dir: "data/raw/Doges_77_Breeds"
+processed_dir: "data/processed/doges77"
+train_split: 0.7
+val_split: 0.15
+test_split: 0.15
+random_seed: 42
